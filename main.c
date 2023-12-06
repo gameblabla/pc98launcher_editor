@@ -520,6 +520,7 @@ void SaveLaunchDat(HWND hwnd, TCHAR *folderName) {
     }
 
     TCHAR value[256];
+	_ftprintf(file, _T("[default]\n")); // Forgot this
     for (int i = 0; i < editControlCount; ++i) {
         GetWindowText(GetDlgItem(hwnd, editControls[i].id), value, sizeof(value));
 
