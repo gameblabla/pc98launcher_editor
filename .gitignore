@@ -1,0 +1,9 @@
+*.exe
+*.bat
+*.com
+a.out
+*.a
+*.o
+WOLF*
+PUYO*
+*.sh

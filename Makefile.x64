@@ -1,0 +1,35 @@
+.POSIX:
+CROSS   =
+CC      = x86_64-w64-mingw32-gcc
+STRIP = x86_64-w64-mingw32-strip
+
+CFLAGS  = -O0 -std=gnu99 -DCURL_STATICLIB
+LDFLAGS = -static -Wl,--start-group -luser32 -lgdi32 -lkernel32 -no-pie -lshell32 -lcomdlg32 -lole32 -lcurl -lcrypto -lbcrypt -ladvapi32 -lcrypt32 -lssl -lcrypto -lgdi32 -lwldap32 -lz -lws2_32 -Wl,--end-group
+
+WINDRES = x86_64-w64-mingw32-windres
+
+EXECUTABLE = dlpc98_x64.exe
+ICO = myicon.ico
+
+C_FILES = main.c curl.c
+OBJ_C	= $(notdir $(patsubst %.c, %.o, $(C_FILES)))
+# icon.o
+
+all: $(OBJ_C) $(EXECUTABLE)
+
+# Rules to make executable
+$(EXECUTABLE): $(OBJ_C)  
+	$(CC) $(CFLAGS) -o $(EXECUTABLE) $^ $(LDFLAGS)
+
+$(OBJ_C) : %.o : %.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+
+all: $(EXECUTABLE)
+
+#icon.o: $(ICO)
+#	echo '1 ICON "$(ICO)"' | $(WINDRES) -o $@
+
+clean:
+	rm -f $(EXECUTABLE) *.o
+#icon.o
