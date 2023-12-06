@@ -1,7 +1,7 @@
 PC98Launcher editor by gameblabla
 ===================
 
-![Screenshot of PC98Launcher editor app](/SCREENSHOT.PNG?raw=true "Screenshot of PC98Launcher editor app")
+![Screenshot of PC98Launcher editor app](/SCREENSHOT.png?raw=true "Screenshot of PC98Launcher editor app")
 
 This is a simple Win32 app for Windows XP+ (can be compiled for lower) that allows you to edit/create LAUNCH.DAT files, 
 download screenshots from MobyGames using the name specified for the purpose of usinbg it with PC98Launcher.
