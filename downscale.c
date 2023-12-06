@@ -1,0 +1,420 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
+#include <png.h>
+#ifdef _WIN32
+#include <winsock.h>
+#endif
+#include <stdbool.h>
+#include <float.h>
+
+#define PNG_SIGNATURE_SIZE 8
+#define CHUNK_TYPE_SIZE 4
+#define CHUNK_LENGTH_SIZE 4
+#define CHUNK_CRC_SIZE 4
+#define PALETTE_ENTRY_SIZE 3 // RGB
+
+#ifdef STANDALONE
+#define MAX_PALETTE_COLORS 256
+#else
+#define MAX_PALETTE_COLORS 240
+#endif
+
+typedef struct {
+    uint8_t r, g, b;
+} RGB;
+
+void extract_png_palette(const char *filename, RGB **palette, int *palette_size) {
+    FILE *file = fopen(filename, "rb");
+    if (!file) {
+        perror("Error opening file");
+        exit(1);
+    }
+
+    uint8_t signature[PNG_SIGNATURE_SIZE];
+    fread(signature, 1, PNG_SIGNATURE_SIZE, file);
+
+    // Iterate through chunks to find the PLTE chunk
+    while (!feof(file)) {
+        uint32_t length;
+        fread(&length, 1, CHUNK_LENGTH_SIZE, file);
+        length = ntohl(length); // Convert to host byte order
+
+        char type[CHUNK_TYPE_SIZE + 1];
+        fread(type, 1, CHUNK_TYPE_SIZE, file);
+        type[CHUNK_TYPE_SIZE] = '\0'; // Null-terminate
+
+        if (strcmp(type, "PLTE") == 0) {
+            *palette_size = length / PALETTE_ENTRY_SIZE;
+            *palette = malloc(length);
+            fread(*palette, 1, length, file);
+            break;
+        } else {
+            // Skip the data of this chunk
+            fseek(file, length + CHUNK_CRC_SIZE, SEEK_CUR);
+        }
+    }
+
+    fclose(file);
+}
+
+unsigned char* downscale_image(unsigned char* data, int width, int height, int new_width, int new_height) {
+    unsigned char* new_data = (unsigned char*)malloc(new_width * new_height);
+    if (!new_data) {
+        perror("Memory allocation failed");
+        exit(1);
+    }
+
+    double x_ratio = (double)width / new_width;
+    double y_ratio = (double)height / new_height;
+
+    for (int y = 0; y < new_height; y++) {
+        for (int x = 0; x < new_width; x++) {
+            int srcX = (int)(x * x_ratio);
+            int srcY = (int)(y * y_ratio);
+            new_data[y * new_width + x] = data[srcY * width + srcX];
+        }
+    }
+
+    return new_data;
+}
+
+void write_bmp_file(const char *filename, unsigned char *img, int width, int height, RGB *palette) {
+    FILE *file = fopen(filename, "wb");
+    if (!file) {
+        perror("Error opening file");
+        exit(1);
+    }
+
+    // BMP file and info headers
+    unsigned char file_header[14] = {'B', 'M', 0, 0, 0, 0, 0, 0, 0, 0, 54, 4, 0, 0};
+    unsigned char info_header[40] = {40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 8, 0};
+    int pad_size = (4 - (width % 4)) % 4;
+    int size_data = (width + pad_size) * height;
+    int size_all = 54 + 1024 + size_data;
+
+    file_header[2] = (unsigned char)(size_all);
+    file_header[3] = (unsigned char)(size_all >> 8);
+    file_header[4] = (unsigned char)(size_all >> 16);
+    file_header[5] = (unsigned char)(size_all >> 24);
+
+    info_header[4] = (unsigned char)(width);
+    info_header[5] = (unsigned char)(width >> 8);
+    info_header[6] = (unsigned char)(width >> 16);
+    info_header[7] = (unsigned char)(width >> 24);
+    info_header[8] = (unsigned char)(height);
+    info_header[9] = (unsigned char)(height >> 8);
+    info_header[10] = (unsigned char)(height >> 16);
+    info_header[11] = (unsigned char)(height >> 24);
+    info_header[20] = (unsigned char)(size_data);
+    info_header[21] = (unsigned char)(size_data >> 8);
+    info_header[22] = (unsigned char)(size_data >> 16);
+    info_header[23] = (unsigned char)(size_data >> 24);
+
+    fwrite(file_header, 1, sizeof(file_header), file);
+    fwrite(info_header, 1, sizeof(info_header), file);
+
+    // Write palette (converted to 4-byte entries)
+	for (int i = 0; i < MAX_PALETTE_COLORS; i++) {
+        uint8_t palette_entry[4] = {palette[i].b, palette[i].g, palette[i].r, 0}; // Ensure RGB order
+        fwrite(palette_entry, 1, 4, file);
+    }
+    #ifndef STANDALONE
+    // Black color palette
+	for (int i = 0; i < 16; i++) {
+        uint8_t palette_entry[4] = {0, 0, 0, 0}; // Ensure RGB order
+        fwrite(palette_entry, 1, 4, file);
+    }
+    #endif
+    
+
+    // Write image data in reverse order
+    for (int y = height - 1; y >= 0; y--) {
+        fwrite(img + (y * width), 1, width, file);
+        fwrite((unsigned char[4]){0, 0, 0, 0}, 1, pad_size, file);
+    }
+
+    fclose(file);
+}
+
+
+void quantize_colors(png_bytep *row_pointers, int width, int height, RGB **palette, int *palette_size, unsigned char **out_data) {
+    *palette_size = MAX_PALETTE_COLORS;
+    *palette = (RGB*)malloc(sizeof(RGB) * (*palette_size));
+    *out_data = (unsigned char*)malloc(width * height);
+
+    // Initialize a simple uniform palette (for demonstration)
+    for (int i = 0; i < *palette_size; i++) {
+        (*palette)[i].r = (i * 255) / (*palette_size - 1);
+        (*palette)[i].g = (i * 255) / (*palette_size - 1);
+        (*palette)[i].b = (i * 255) / (*palette_size - 1);
+    }
+
+    // Map each pixel to the nearest color in the palette
+    for (int y = 0; y < height; y++) {
+        png_bytep row = row_pointers[y];
+        for (int x = 0; x < width; x++) {
+            png_bytep px = &(row[x * 3]); // Assuming RGB (3 bytes per pixel)
+
+            // Find the closest palette color
+            int closest_palette_index = 0;
+            int min_distance = INT_MAX;
+            for (int p = 0; p < *palette_size; p++) {
+                int distance = (px[0] - (*palette)[p].r) * (px[0] - (*palette)[p].r) +
+                               (px[1] - (*palette)[p].g) * (px[1] - (*palette)[p].g) +
+                               (px[2] - (*palette)[p].b) * (px[2] - (*palette)[p].b);
+                if (distance < min_distance) {
+                    min_distance = distance;
+                    closest_palette_index = p;
+                }
+            }
+
+            (*out_data)[y * width + x] = (unsigned char)closest_palette_index;
+        }
+    }
+}
+
+typedef struct {
+    uint8_t r, g, b;
+} Color;
+
+typedef struct {
+    Color centroid;
+    long total_r, total_g, total_b;
+    int count;
+} Cluster;
+
+// Function to calculate the squared Euclidean distance between two colors
+double color_distance_squared(Color c1, Color c2) {
+    long r_diff = (long)c1.r - (long)c2.r;
+    long g_diff = (long)c1.g - (long)c2.g;
+    long b_diff = (long)c1.b - (long)c2.b;
+    return r_diff * r_diff + g_diff * g_diff + b_diff * b_diff;
+}
+
+void kmeans(unsigned char* data, int width, int height, int channels, Cluster* clusters, int k) {
+    // Step 1: Initialize clusters with random colors from the image
+    for (int i = 0; i < k; i++) {
+        int random_pixel = (rand() % (width * height)) * channels;
+        clusters[i].centroid.r = data[random_pixel];
+        clusters[i].centroid.g = data[random_pixel + 1];
+        clusters[i].centroid.b = data[random_pixel + 2];
+    }
+
+    bool changed;
+    do {
+        // Reset cluster data
+        for (int i = 0; i < k; i++) {
+            clusters[i].total_r = 0;
+            clusters[i].total_g = 0;
+            clusters[i].total_b = 0;
+            clusters[i].count = 0;
+        }
+
+        changed = false;
+
+        // Step 2: Assign each pixel to the nearest cluster
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int pixel_index = (y * width + x) * channels;
+                Color pixel_color = {data[pixel_index], data[pixel_index + 1], data[pixel_index + 2]};
+                
+                // Find nearest cluster
+                int nearest_cluster = 0;
+                double min_distance = color_distance_squared(pixel_color, clusters[0].centroid);
+                for (int j = 1; j < k; j++) {
+                    double distance = color_distance_squared(pixel_color, clusters[j].centroid);
+                    if (distance < min_distance) {
+                        min_distance = distance;
+                        nearest_cluster = j;
+                    }
+                }
+
+                // Update cluster totals
+                clusters[nearest_cluster].total_r += pixel_color.r;
+                clusters[nearest_cluster].total_g += pixel_color.g;
+                clusters[nearest_cluster].total_b += pixel_color.b;
+                clusters[nearest_cluster].count++;
+            }
+        }
+
+        // Step 3: Update each cluster's centroid
+        for (int i = 0; i < k; i++) {
+            if (clusters[i].count > 0) {
+                Color new_centroid = {
+                    (unsigned char)(clusters[i].total_r / clusters[i].count),
+                    (unsigned char)(clusters[i].total_g / clusters[i].count),
+                    (unsigned char)(clusters[i].total_b / clusters[i].count)
+                };
+
+                // Check if the centroid has changed
+                if (color_distance_squared(clusters[i].centroid, new_centroid) > 1) {
+                    changed = true;
+                    clusters[i].centroid = new_centroid;
+                }
+            }
+        }
+    } while (changed);
+}
+
+
+void generate_palette_with_kmeans(unsigned char *data, int width, int height, int channels, RGB *palette) {
+    int k = MAX_PALETTE_COLORS; // Number of clusters
+    Cluster clusters[k];
+
+    kmeans(data, width, height, channels, clusters, k);
+
+    // Fill the palette with the centroids of the clusters
+    for (int i = 0; i < k; i++) {
+        palette[i].r = clusters[i].centroid.r;
+        palette[i].g = clusters[i].centroid.g;
+        palette[i].b = clusters[i].centroid.b;
+    }
+}
+
+
+void map_pixels_to_palette(unsigned char* data, unsigned char* out_data, int width, int height, RGB* palette, int palette_size) {
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            int pixel_index = (y * width + x) * 3; // 3 channels: RGB
+            Color pixel_color = {data[pixel_index], data[pixel_index + 1], data[pixel_index + 2]};
+            
+            // Find nearest color in the palette
+            int nearest_color = 0;
+            double min_distance = DBL_MAX;
+            for (int i = 0; i < palette_size; i++) {
+                double distance = color_distance_squared(pixel_color, (Color){palette[i].r, palette[i].g, palette[i].b});
+                if (distance < min_distance) {
+                    min_distance = distance;
+                    nearest_color = i;
+                }
+            }
+
+            out_data[y * width + x] = (unsigned char)nearest_color;
+        }
+    }
+}
+
+void read_png_file(const char* filename, unsigned char** out_data, RGB** out_palette, int* out_width, int* out_height, int* out_palette_size) {
+    FILE *fp = fopen(filename, "rb");
+    if (!fp) {
+        perror("File opening failed");
+        exit(EXIT_FAILURE);
+    }
+
+    png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    if (!png) {
+        fclose(fp);
+        exit(EXIT_FAILURE);
+    }
+
+    png_infop info = png_create_info_struct(png);
+    if (!info) {
+        fclose(fp);
+        png_destroy_read_struct(&png, NULL, NULL);
+        exit(EXIT_FAILURE);
+    }
+
+    if (setjmp(png_jmpbuf(png))) {
+        fclose(fp);
+        png_destroy_read_struct(&png, &info, NULL);
+        exit(EXIT_FAILURE);
+    }
+
+    png_init_io(png, fp);
+    png_read_info(png, info);
+
+    *out_width = png_get_image_width(png, info);
+    *out_height = png_get_image_height(png, info);
+    png_byte color_type = png_get_color_type(png, info);
+    png_byte bit_depth = png_get_bit_depth(png, info);
+
+    // Check if the image is indexed color (palette)
+    if (color_type == PNG_COLOR_TYPE_PALETTE && bit_depth <= 8) {
+        // Read the palette
+        png_colorp png_palette;
+        int num_palette;
+        png_get_PLTE(png, info, &png_palette, &num_palette);
+
+        *out_palette_size = num_palette;
+        *out_palette = (RGB*)malloc(*out_palette_size * sizeof(RGB));
+        for (int i = 0; i < *out_palette_size; i++) {
+            (*out_palette)[i].r = png_palette[i].red;
+            (*out_palette)[i].g = png_palette[i].green;
+            (*out_palette)[i].b = png_palette[i].blue;
+        }
+
+        // Allocate memory for the indexed data
+        *out_data = (unsigned char*)malloc(*out_width * *out_height);
+
+        png_bytep row_pointers[*out_height];
+        for (int y = 0; y < *out_height; y++) {
+            row_pointers[y] = *out_data + y * *out_width;
+        }
+
+        // Update PNG to use the palette
+        png_set_packing(png);
+        png_read_update_info(png, info);
+        png_read_image(png, row_pointers);
+    } else {
+        // Allocate memory for the image data
+        unsigned char *data = (unsigned char *)malloc(*out_width * *out_height * 3); // Assuming 3 channels for RGB
+
+        // Handling RGB/RGBA images
+        png_bytep row_pointers[*out_height];
+        for (int y = 0; y < *out_height; y++) {
+            row_pointers[y] = &data[y * *out_width * 3];
+        }
+
+        png_read_image(png, row_pointers);
+
+        // Create palette using K-means clustering
+        *out_palette_size = MAX_PALETTE_COLORS;
+        *out_palette = (RGB*)malloc(sizeof(RGB) * (*out_palette_size));
+        generate_palette_with_kmeans(data, *out_width, *out_height, 3, *out_palette);
+
+        // Map each pixel in the image to the nearest color in the palette
+        *out_data = (unsigned char*)malloc(*out_width * *out_height);
+        map_pixels_to_palette(data, *out_data, *out_width, *out_height, *out_palette, *out_palette_size);
+
+        // Free the allocated memory for data
+        free(data);
+    }
+
+    fclose(fp);
+    png_destroy_read_struct(&png, &info, NULL);
+}
+
+void downscale_png_to_bmp(const char* input, const char* output) {
+    unsigned char* img_data;
+    RGB* palette;
+    int width, height, palette_size;
+
+    // Read the input PNG file
+    read_png_file(input, &img_data, &palette, &width, &height, &palette_size);
+
+    // Downscale the image
+    unsigned char *new_img = downscale_image(img_data, width, height, 320, 200);
+
+    // Write the downscaled image to a BMP file
+    write_bmp_file(output, new_img, 320, 200, palette);
+
+    // Free the allocated memory
+    free(img_data);
+    free(new_img);
+    free(palette);
+}
+
+#ifdef STANDALONE
+int main(int argc, char **argv) {
+    if (argc < 3) {
+        fprintf(stderr, "Usage: %s <input PNG file> <output BMP file>\n", argv[0]);
+        return 1;
+    }
+
+    downscale_png_to_bmp(argv[1], argv[2]);
+
+    return 0;
+}
+#endif
