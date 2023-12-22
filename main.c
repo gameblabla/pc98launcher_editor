@@ -375,7 +375,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 					TCHAR newImages[MAX_PATH] = _T("");
 					for (int i = 0; i < 4; i++) {
 						TCHAR bmpFileName[MAX_PATH];
-						_stprintf(bmpFileName, _T("%s\\%s_%d.BMP"), selectedfolder, folderName, i + 1);
+						_stprintf(bmpFileName, _T("%s\\%s%d.BMP"), selectedfolder, folderName, i + 1);
 						_stprintf(pngFileName, _T("%s\\%s_%d.PNG"), selectedfolder, folderName, i + 1);
 						downscale_png_to_bmp(pngFileName, bmpFileName);
 
@@ -383,7 +383,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 							_tcscat(newImages, _T(","));
 						}
 						TCHAR imageName[MAX_PATH];
-						_stprintf(imageName, _T("%s_%d.BMP"), folderName, i + 1);
+						_stprintf(imageName, _T("%s%d.BMP"), folderName, i + 1);
 						_tcscat(newImages, imageName);
 					}
 					

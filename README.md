@@ -18,6 +18,5 @@ TODO
 
 - Allow creating !start.bat file if it does not exist with notepad and then refresh.
 - Show screenshots ?
-- Improve conversion for RGB/RGBA PNG files, it's quite rough right now but good enough for thumbnails.
 - Eventually make a Qt5/Qt6 or GTK3 version of it. It does work on Wine however.
-- Support the Sharp X68000 as well. This would need changes to the downscaler i believe. (Some games target 512x512 or higher)
+- Support the Sharp X68000 as well. (Some games target 512x512 or higher) Not sure what target resolution it needs (256x256 ?)

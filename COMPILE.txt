@@ -1,0 +1,6 @@
+MINGW32 for ImageMagick (minimal build)
+Also had to change configure to force pass JPEG tests
+
+./configure --host=i686-w64-mingw32 --target=i686-w64-mingw32 --prefix=/usr/i686-w64-mingw32 --disable-shared --with-jpeg=yes LDFLAGS="-L/usr/i686-w64-mingw32/lib" --without-raqm --disable-opencl --disable-assert --disable-docs --without-lqr --without-lzma --without-pango --without-zip --without-webp --without-tiff --without-zstd --without-xml --without-bzlib --without-freetype --without-fontconfig
+make -j8
+make install

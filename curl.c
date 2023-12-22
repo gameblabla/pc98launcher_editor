@@ -77,6 +77,14 @@ const ExceptionMapping exceptions[] = {
 	// Doom 2 sometimes gets subbed for Doom 2D, resulting in the search failling...
     {"Doom 2", "Doom+II"},
     {"doom2", "Doom+II"},
+    {"doom", "Doom"},
+    {"doom1", "Doom"},
+    {"PUYO PUYO TSU", "PUYO+PUYO+2"},
+    {"Puyo Puyo TSU", "PUYO+PUYO+2"},
+    {"Puyo Puyo Tsu", "PUYO+PUYO+2"},
+    {"Puyo TSU", "PUYO+PUYO+2"},
+    {"PuyoTSU", "PUYO+PUYO+2"},
+    {"PuyoTsu", "PUYO+PUYO+2"},
     // The "3-D" is used in some compilations
     {"Wolfenstein 3-D", "Wolfenstein+3D"},
     {"Wolf3D", "Wolfenstein+3D"},
@@ -110,6 +118,7 @@ char *find_exception(const char *str) {
     }
     return NULL;
 }
+
 
 
 char *url_encode(const char *str) {
@@ -312,6 +321,7 @@ void fetch_game_details(long game_id) {
     CURL *curl;
     CURLcode res;
     char url[512];
+    char tmp[128];
     struct string s;
     init_string(&s);
     
